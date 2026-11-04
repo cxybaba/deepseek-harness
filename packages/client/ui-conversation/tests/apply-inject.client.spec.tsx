@@ -97,6 +97,8 @@ async function bench(renderQuote = false) {
       replaceMain(id, beforeOpen)
     },
     openSession,
+    readSessionRoute: () => undefined,
+    writeSessionView: vi.fn(),
   } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({

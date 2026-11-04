@@ -67,6 +67,8 @@ function provideWorkspaceNavigation(runtime: SlotTestRuntime): (id: SessionId) =
       openSession(SID)
     }),
     openSession,
+    readSessionRoute: () => undefined,
+    writeSessionView: vi.fn(),
   } as never)
   return openSession
 }

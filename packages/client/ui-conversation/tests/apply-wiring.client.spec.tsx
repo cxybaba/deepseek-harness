@@ -7,13 +7,14 @@ import {
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionHashRoute } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { apply, inject, type ViewTab } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 usePinnedBrowserLanguages('zh-CN')
 
 const SID = 'session-1' as SessionId
 
-async function bench(options: { declareConversation?: boolean } = {}) {
+async function bench(options: { declareConversation?: boolean; route?: SessionHashRoute } = {}) {
   const runtime = await SlotTestRuntime.create()
   const developerTools = createSnapshotStore(true)
   runtime.ctx.provide('uiWorkspace', {
@@ -21,6 +22,8 @@ async function bench(options: { declareConversation?: boolean } = {}) {
       beforeOpen(SID)
     }),
     openSession: vi.fn(),
+    readSessionRoute: () => options.route,
+    writeSessionView: vi.fn(),
   } as never)
   runtime.ctx.provide('configForms', { developerTools: { enabled: developerTools }, get: () => stubConfigForm().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
@@ -88,6 +91,20 @@ describe('target-neutral Conversation apply wiring', () => {
     expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'probe'])
     b.developerTools.set(true)
     expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory', 'probe'])
+    await b.runtime.dispose()
+  })
+  it('applies the View named by the browser hash', async () => {
+    localStorage.removeItem(`dsh.conversation.${SID}`)
+    const b = await bench({ route: { sessionId: SID, view: 'trajectory' } })
+    await b.runtime.sessions.add({ id: SID })
+    b.runtime.sessions.retain(SID, { source: 'mainView' })
+    for (const id of ['chat', 'trajectory']) {
+      b.runtime.slots.register({ name: 'conversation.view', id, label: id }, (() => null) as never)
+    }
+    const header = b.runtime.slots.entries('conversation.session.header')[0]!
+    const actions = { setView: vi.fn(), openView: vi.fn() }
+    header.inject!(SID, actions as never)
+    await vi.waitFor(() => { expect(actions.setView).toHaveBeenCalledWith('trajectory') })
     await b.runtime.dispose()
   })
   it('waits for the layout-owned conversation declaration before registering its subtree', async () => {

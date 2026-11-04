@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ShortcutCommandId, ShortcutFixedCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { SessionHashRoute } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { UiConversation } from './conversation/assembly.ts'
 import { UserText, PlainUserText, SessionReference } from './user-text/UserText.tsx'
 import { sessionReferenceRule } from './user-text/session-reference-rule.ts'
@@ -119,6 +120,8 @@ interface WorkspaceNavigation {
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
     beforeOpen: (sessionId: SessionId) => void,
   ): Promise<void>
+  readSessionRoute?(): SessionHashRoute | undefined
+  writeSessionView?(view: string | undefined): void
 }
 
 /** Action registration used by the composer without importing its command-UI consumer. */
@@ -223,8 +226,19 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     const active = resolveActiveView(viewTabs(), preferred)
     if (active !== undefined) uiConversation.binding(sessionId).activate(active.id)
   }
+  const sessionViewActions = new Map<SessionId, BoundActions<typeof conversationStore>>()
+  const applyRouteView = (sessionId: SessionId, view: string | undefined): void => {
+    if (view === undefined) return
+    if (!viewTabs().some(tab => tab.id === view)) return
+    activateView(sessionId, view)
+    sessionViewActions.get(sessionId)?.setView(view)
+  }
   const restoreView = (sessionId: SessionId): void => {
-    activateView(sessionId, readConversationViewPreference(sessionId))
+    const route = workspaceNavigation.readSessionRoute?.()
+    const preferred = route !== undefined && route.sessionId === sessionId && route.view !== undefined
+      ? route.view
+      : readConversationViewPreference(sessionId)
+    activateView(sessionId, preferred)
   }
   const conversationViews = createSnapshotStore<readonly ViewTab[]>(viewTabs())
   const viewPins = createViewPins()
@@ -232,6 +246,18 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     getSnapshot: () => slots.entriesOfSlot('conversation.session.header.views.actions').length > 0,
     subscribe: (listener: () => void) => slots.subscribe('conversation.session.header.views.actions', listener),
   }
+  ctx.effect(() => {
+    if (typeof window === 'undefined') return () => {}
+    const applyHashView = (): void => {
+      const route = workspaceNavigation.readSessionRoute?.()
+      if (route === undefined) return
+      const current = ctx.uiSession.adapter.current.getSnapshot().key as SessionId | undefined
+      if (current !== route.sessionId) return
+      applyRouteView(route.sessionId, route.view)
+    }
+    window.addEventListener('hashchange', applyHashView)
+    return () => { window.removeEventListener('hashchange', applyHashView) }
+  }, 'ui-conversation: Session hash route')
   const bindings = new Set<SessionBinding>()
   const trackedBindings = new WeakSet<SessionBinding>()
   const trackBinding = (binding: SessionBinding): void => {
@@ -403,6 +429,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         if (!viewTabs().some(tab => tab.id === view)) return
         activateView(sessionId, view)
         actions.openView(view, focus)
+        workspaceNavigation.writeSessionView?.(view)
       }
       const inspectionTarget = () => uiConversation.views.entries().find(definition =>
         definition.toolCallFocus !== undefined
@@ -449,15 +476,24 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.session.header.views.actions': { kind: 'list', scope: 'root' },
     },
     store: conversationStore,
-    inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionHeaderInjected => ({
-      hooks: { conversationViews, entryPins: viewPins.unpinned, entryActions: viewActions },
-      setPinned: viewPins.setPinned,
-      open: (id) => { workspaceNavigation.openSession(id) },
-      selectView: (view) => {
-        activateView(sessionId, view)
-        actions.setView(view)
-      },
-    }),
+    inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionHeaderInjected => {
+      sessionViewActions.set(sessionId, actions)
+      const route = workspaceNavigation.readSessionRoute?.()
+      if (route !== undefined && route.sessionId === sessionId && route.view !== undefined
+        && readConversationViewPreference(sessionId) !== route.view) {
+        queueMicrotask(() => { applyRouteView(sessionId, route.view) })
+      }
+      return {
+        hooks: { conversationViews, entryPins: viewPins.unpinned, entryActions: viewActions },
+        setPinned: viewPins.setPinned,
+        open: (id) => { workspaceNavigation.openSession(id) },
+        selectView: (view) => {
+          activateView(sessionId, view)
+          actions.setView(view)
+          workspaceNavigation.writeSessionView?.(view)
+        },
+      }
+    },
   }, ConversationSessionHeader)
 
   const registerComposerBar = () => slots.register({

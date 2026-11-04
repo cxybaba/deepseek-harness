@@ -99,6 +99,8 @@ async function bench(nodes: ToolResultNode[]) {
       beforeOpen(SID)
     }),
     openSession: vi.fn(),
+    readSessionRoute: () => undefined,
+    writeSessionView: vi.fn(),
   } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)

@@ -23,6 +23,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { RowToast } from './contract/slots.ts'
 import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
+import {
+  readSessionHash, replaceSessionHash, sessionHash, type SessionHashRoute,
+} from './session-hash.ts'
 import type { WorkspaceViewStoreActions } from './stores.ts'
 
 interface MainSelection {
@@ -43,6 +46,16 @@ export interface UiWorkspace {
    * @param target - known Session identity or durable direct-parent subagent address to display.
    */
   openSession(target: SessionTarget): void
+  /**
+   * Read the Session route carried by the browser hash.
+   * @returns the parsed route, or undefined when the hash is not a Session route.
+   */
+  readSessionRoute(): SessionHashRoute | undefined
+  /**
+   * Write the current Session's Conversation View into the browser hash.
+   * @param view - selected View identity; the Session is written when absent.
+   */
+  writeSessionView(view: string | undefined): void
   /**
    * Connect a Workspace and open its Session unless a later navigation supersedes it.
    * @param workspaceId - target Workspace.
@@ -294,6 +307,18 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     this.replaceMain(target, this.lifetime.signal, 'reveal')
   }
 
+  readSessionRoute(): SessionHashRoute | undefined {
+    return readSessionHash()
+  }
+
+  writeSessionView(view: string | undefined): void {
+    const sessionId = this.selection.getSnapshot().sessionId
+    if (sessionId === undefined) return
+    const route = readSessionHash()
+    if (route !== undefined && route.sessionId !== sessionId) return
+    replaceSessionHash(sessionHash(sessionId, view))
+  }
+
   openWorkspace(
     workspaceId: WorkspaceId,
     beforeOpen?: (sessionId: SessionId) => void,
@@ -452,6 +477,14 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       )
     }
 
+    const onHashChange = (): void => {
+      const route = readSessionHash()
+      if (route === undefined) return
+      if (this.selection.getSnapshot().sessionId === route.sessionId) return
+      if (this.sessions.list.getSnapshot().byId[route.sessionId] === undefined) return
+      this.openSession(route.sessionId)
+    }
+    if (typeof window !== 'undefined') window.addEventListener('hashchange', onHashChange)
     const disposeWorkspaces = this.workspaces.list.subscribe(reconcile)
     const disposeSessions = this.sessions.list.subscribe(reconcile)
     reconcile()
@@ -459,10 +492,16 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       this.lifetime.abort()
       disposeSessions()
       disposeWorkspaces()
+      if (typeof window !== 'undefined') window.removeEventListener('hashchange', onHashChange)
     }
   }
 
   private async restoreSelection(workspaces: WorkspaceSnapshot, sessions: SessionListState): Promise<void> {
+    const route = readSessionHash()
+    if (route !== undefined && sessions.byId[route.sessionId] !== undefined) {
+      this.replaceMain(route.sessionId, this.lifetime.signal, 'preserve')
+      return
+    }
     const saved = this.selection.getSnapshot()
     if (saved.subagentAddress !== undefined) {
       this.replaceMain(saved.subagentAddress, this.lifetime.signal, 'preserve')
@@ -542,6 +581,11 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         sessionId: reference.sessionId,
         ...(subagentAddress === undefined ? {} : { subagentAddress }),
       })
+      const route = readSessionHash()
+      replaceSessionHash(sessionHash(
+        reference.sessionId,
+        route?.sessionId === reference.sessionId ? route.view : undefined,
+      ))
     } catch (error: unknown) {
       reference.release()
       throw error
