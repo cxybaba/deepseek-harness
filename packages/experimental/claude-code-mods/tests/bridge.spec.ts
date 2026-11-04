@@ -172,7 +172,7 @@ describe('first-mod: the tutorial mod on the real loop', () => {
     const h = await harness(['first-mod'], adapter)
     h.ctx.tools.register(echoTool('echo'))
     const agent = await h.agent()
-    expect(h.ctx.commands.list(agent).map(command => command.name)).toEqual(['tally'])
+    expect(h.ctx.commands.list(agent.id).map(command => command.name)).toEqual(['tally'])
     expect(h.info).toHaveBeenCalledWith(
       'claude-code-mods: hooks module first-mod@inline loaded (tier user); '
       + 'events: session.start, tool.call, command.run{command=tally}, ui.render{component=Spinner}',
@@ -186,11 +186,11 @@ describe('first-mod: the tutorial mod on the real loop', () => {
 
     // The command is scoped to the agent that started the session, not global.
     const other = await h.agent('a2')
-    expect(h.ctx.commands.list(other).map(command => command.name)).toEqual(['tally'])
+    expect(h.ctx.commands.list(other.id).map(command => command.name)).toEqual(['tally'])
 
     await h.mods.dispose()
-    expect(h.ctx.commands.list(agent)).toEqual([])
-    expect(h.ctx.commands.list(other)).toEqual([])
+    expect(h.ctx.commands.list(agent.id)).toEqual([])
+    expect(h.ctx.commands.list(other.id)).toEqual([])
   })
 })
 

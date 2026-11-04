@@ -169,10 +169,8 @@ class SessionBenchmarkHost {
     let history: WebController | undefined
     if (scenario === 'first-history') {
       new BenchmarkSessionQuery(ctx)
-      history = new WebController(ctx, new HistoryController(ctx), (observation) => {
-        // First-history ends at snapshot delivery; Agent-resume owns live activation and retention.
-        observation[Symbol.dispose]()
-      })
+      // First-history ends at snapshot delivery; a follow opening never resumes an Agent.
+      history = new WebController(ctx, new HistoryController(ctx))
     }
     if (agentScenario) await ctx.plugin(AgentLoop, { agents: [] })
     return new SessionBenchmarkHost(ctx, scenario, history)

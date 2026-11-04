@@ -491,7 +491,11 @@ export interface SessionPageRequest {
 /** One live event request for a durable Session address. */
 export interface SessionFollowRequest extends Pick<SessionPageRequest, 'maxMessages' | 'turnWindow'> {
   readonly address: SessionAddress
-  /** Request background activation; omission leaves the read passive. */
+  /**
+   * Retained for wire compatibility with older Web clients and ignored by the Host:
+   * a follow opening is always passive and never resumes an Agent.
+   * @deprecated Use an explicit command (prompt/selectModel/rename) to activate.
+   */
   readonly activate?: boolean
   /** Include process-local assistant presentation frames for the Web client. */
   readonly assistantStream?: true

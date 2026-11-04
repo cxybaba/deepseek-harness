@@ -79,16 +79,14 @@ afterEach(async () => {
   roots.clear()
 })
 
-function controllers(
-  ctx: Context, promote: (observation: SessionObservation) => void = (observation) => { observation[Symbol.dispose]() },
-): {
+function controllers(ctx: Context): {
   history: HistoryController
   web: WebController
 } {
   roots.add(ctx.root)
   installSessionReadTestServices(ctx)
   const history = new HistoryController(ctx)
-  return { history, web: new WebController(ctx, history, promote) }
+  return { history, web: new WebController(ctx, history) }
 }
 
 async function setup(): Promise<{ ctx: Context; history: HistoryController; web: WebController }> {
@@ -238,7 +236,7 @@ describe('Session history and Web follow', () => {
     }
     const observed = deferred<SessionObservation>()
     ctx.provide('sessionQuery', { observeSession: () => observed.promise } as never)
-    const { web } = controllers(ctx, vi.fn())
+    const { web } = controllers(ctx)
     const abort = new AbortController()
     const iterator = web.follow({ address: { kind: 'session', sessionId } }, abort.signal)
       [Symbol.asyncIterator]()
@@ -398,7 +396,7 @@ describe('Session history and Web follow', () => {
         retain: vi.fn(), [Symbol.dispose]: vi.fn(),
       } satisfies SessionObservation),
     } as never)
-    const { web } = controllers(ctx, vi.fn())
+    const { web } = controllers(ctx)
     const abort = new AbortController()
     const iterator = web.follow({ address: { kind: 'session', sessionId } }, abort.signal)
       [Symbol.asyncIterator]()
@@ -409,14 +407,15 @@ describe('Session history and Web follow', () => {
     await ctx.fiber.dispose()
   })
 
-  it('does not activate a prepared Session when the request omits activate', async () => {
+  it('opens a prepared Session passively even when the request asks for activation', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const sessionId = SessionId('passive-activation-default')
+    const sessionId = SessionId('passive-follow-always')
     const header: SessionHeader = {
       version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 1, cwd: '/workspace', isSeeded: false,
     }
     const disposeSource = vi.fn()
+    const retain = vi.fn()
     const source: SessionObservation = {
       source: 'prepared',
       header,
@@ -424,82 +423,20 @@ describe('Session history and Web follow', () => {
       events: [],
       cursor: -1,
       projections: { asOfSeq: -1, values: {} },
-      retain: () => source,
+      retain,
       [Symbol.dispose]: disposeSource,
     }
     ctx.provide('sessionQuery', { observeSession: () => Promise.resolve(source) } as never)
-    const promote = vi.fn()
-    const { web } = controllers(ctx, promote)
+    const { web } = controllers(ctx)
     const abort = new AbortController()
-    const iterator = web.follow({ address: { kind: 'session', sessionId } }, abort.signal)[Symbol.asyncIterator]()
+    const iterator = web.follow({ address: { kind: 'session', sessionId }, activate: true }, abort.signal)
+      [Symbol.asyncIterator]()
     await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'snapshot' } })
-    expect(promote).not.toHaveBeenCalled()
+    // A follow opening must never retain the observation for background activation.
+    expect(retain).not.toHaveBeenCalled()
     abort.abort()
     await expect(iterator.next()).resolves.toMatchObject({ done: true })
     expect(disposeSource).toHaveBeenCalled()
-    await ctx.fiber.dispose()
-  })
-
-  it('starts activation for a consumer that stops after the opening snapshot', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    const sessionId = SessionId('activation-after-opening')
-    const header: SessionHeader = {
-      version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 1, cwd: '/workspace', isSeeded: false,
-    }
-    const disposed: string[] = []
-    const promotion: SessionObservation = {
-      source: 'prepared',
-      header,
-      inheritedEventCount: SessionLogOffset(0),
-      events: [],
-      cursor: -1,
-      projections: { asOfSeq: -1, values: {} },
-      retain: vi.fn(),
-      [Symbol.dispose]: () => { disposed.push('promotion') },
-    }
-    const source: SessionObservation = {
-      ...promotion,
-      retain: () => promotion,
-      [Symbol.dispose]: () => { disposed.push('source') },
-    }
-    ctx.provide('sessionQuery', { observeSession: () => Promise.resolve(source) } as never)
-    const promote = vi.fn((observation: SessionObservation) => { observation[Symbol.dispose]() })
-    const { web } = controllers(ctx, promote)
-    const iterator = web.follow({ address: { kind: 'session', sessionId }, activate: true }, signal())
-      [Symbol.asyncIterator]()
-    await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'snapshot' } })
-    await iterator.return?.(undefined)
-    expect(promote).toHaveBeenCalledOnce()
-    expect(disposed).toContain('promotion')
-    await ctx.fiber.dispose()
-  })
-
-  it('disposes a retained promotion when background activation rejects synchronously', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    const sessionId = SessionId('promotion-failure')
-    const meta = { version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 1, cwd: '/workspace' }
-    const disposePromotion = vi.fn()
-    const promotion = {
-      source: 'prepared', header: meta, events: [], cursor: -1,
-      projections: { asOfSeq: -1, values: {} },
-      retain: vi.fn(), [Symbol.dispose]: disposePromotion,
-    } as unknown as SessionObservation
-    const source = {
-      ...promotion,
-      retain: () => promotion,
-      [Symbol.dispose]: vi.fn(),
-    } as SessionObservation
-    ctx.provide('sessionQuery', {
-      observeSession: () => Promise.resolve(source),
-    } as never)
-    const { web } = controllers(ctx, () => { throw new Error('activation failed') })
-    const iterator = web.follow({ address: { kind: 'session', sessionId }, activate: true }, signal())
-      [Symbol.asyncIterator]()
-
-    await expect(iterator.next()).rejects.toThrow('activation failed')
-    expect(disposePromotion).toHaveBeenCalledOnce()
     await ctx.fiber.dispose()
   })
 
@@ -770,7 +707,7 @@ describe('Session history and Web follow', () => {
         retain: vi.fn(), [Symbol.dispose]: vi.fn(),
       } as unknown as SessionObservation),
     } as never)
-    const { history } = controllers(ctx, vi.fn())
+    const { history } = controllers(ctx)
 
     await expect(history.events({
       address: {

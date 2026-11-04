@@ -19,7 +19,7 @@ async function fixture() {
   await ctx.plugin(SessionStore)
   installSessionReadTestServices(ctx)
   const history = new HistoryController(ctx)
-  const web = new WebController(ctx, history, (observation) => { observation[Symbol.dispose]() })
+  const web = new WebController(ctx, history)
   const session = ctx.sessions.create(SessionId('history-target'), { meta: { cwd: '/history-test' } })
   const abort = new AbortController()
   aborters.push(abort)
@@ -119,7 +119,7 @@ describe('HistoryController passive reads', () => {
     expect(output.records.map(record => record.event.seq)).toEqual([replaced.seq])
   })
 
-  it('releases the opening Observation when activation has nothing to promote', async () => {
+  it('releases the opening Observation after a passive opening', async () => {
     const f = await fixture()
     const source = await f.ctx.sessionQuery.observeSession(f.session.id)
     const dispose = vi.fn(() => { source[Symbol.dispose]() })
@@ -160,15 +160,12 @@ describe('HistoryController passive reads', () => {
     await expect(stream.next()).rejects.toMatchObject({ code: 'subagent/not-found' })
   })
 
-  it('does not promote a live Session when activation was requested', async () => {
+  it('keeps a live Session untouched on a follow opening', async () => {
     const f = await fixture()
-    const promote = vi.fn()
-    const web = new WebController(f.ctx, f.history, promote)
-    const stream = web.follow({ address: f.address, activate: true }, f.abort.signal)[Symbol.asyncIterator]()
+    const stream = f.web.follow({ address: f.address, activate: true }, f.abort.signal)[Symbol.asyncIterator]()
     expect(await stream.next()).toMatchObject({ value: { type: 'snapshot' } })
     const pending = stream.next()
     f.abort.abort()
     expect(await pending).toMatchObject({ done: true })
-    expect(promote).not.toHaveBeenCalled()
   })
 })

@@ -595,7 +595,7 @@ describe('/plan', () => {
     openTurn(plainAgent.session)
     const plainSteer = vi.fn()
     ;(plainAgent as unknown as { steer: typeof plainSteer }).steer = plainSteer
-    expect(ctx.commands.list(plainAgent)).toEqual([
+    expect(ctx.commands.list(plainAgent.id)).toEqual([
       { definitionId: '@deepseek-ai/dsh-plan-mode', name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]', attachments: true } },
     ])
 
@@ -772,11 +772,11 @@ describe('/plan', () => {
     const fiber = await ctx.plugin(PlanModeController, PLAN_CONFIG)
     await new Promise(resolve => setImmediate(resolve))
     const agent = await agentWithSession(ctx)
-    expect(ctx.commands.list(agent).map(command => command.name)).toEqual(['plan'])
+    expect(ctx.commands.list(agent.id).map(command => command.name)).toEqual(['plan'])
 
     await fiber.dispose()
 
-    expect(ctx.commands.list(agent)).toEqual([])
+    expect(ctx.commands.list(agent.id)).toEqual([])
   })
 })
 

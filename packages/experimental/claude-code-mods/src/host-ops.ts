@@ -310,7 +310,7 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
       const agent = requireAgent(context, 'command.list')
       const registry = ctx.get('commands')
       if (registry === undefined) return []
-      return registry.list(agent).map((descriptor): CommandInfo => ({
+      return registry.list(agent.id).map((descriptor): CommandInfo => ({
         name: descriptor.name,
         description: descriptor.description,
         source: options.modCommands.has(descriptor.name) ? 'plugin' : 'builtin',

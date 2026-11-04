@@ -11,7 +11,6 @@ import type {} from '@deepseek-ai/dsh-client-file-upload'
 import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativeFileApplication, openNativeAssociatedPath, revealNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
-import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { Remote, RemoteError, TypertRemoteService, principalOf, type TypertResourceResolveInput } from '@deepseek-ai/dsh-typert-protocol'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
@@ -168,7 +167,6 @@ export class SessionController extends TypertRemoteService {
   private readonly revealPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly canOpenPath: () => boolean
   private readonly listWorkSliceMs: number
-  private readonly promotions = new Set<Promise<void>>()
 
   /**
    * @param ctx - Host context containing the Session capability assembly.
@@ -198,16 +196,11 @@ export class SessionController extends TypertRemoteService {
       return result.agent
     }), 'session-controller: file-upload Agent resolver')
     this.controlState = new SessionControlController(ctx)
-    // Registered before history so reverse-order teardown closes every
-    // follower before waiting for already-admitted promotions.
-    ctx.effect(() => async () => {
-      await Promise.allSettled([...this.promotions])
-    }, 'session-controller.promotions')
     // Assistant-stream observation must be live before the list read yields: an Agent's
     // opening frame arriving during that await would otherwise have no listener.
     this.historyController = new HistoryController(ctx)
     this.stateController = new StateController(ctx, this.historyController)
-    this.webController = new WebController(ctx, this.historyController, (observation) => { this.promote(observation) })
+    this.webController = new WebController(ctx, this.historyController)
     this.listState = new ApiSessionList(ctx, this.listWorkSliceMs)
     await this.commands.initialize()
     ctx.fiber.assertActive()
@@ -244,23 +237,6 @@ export class SessionController extends TypertRemoteService {
       if (event.type !== 'user/message' || event.data.source.kind !== 'user') return
       ctx.emit('api-session/activity', session.id, event.time)
     })
-  }
-
-  /**
-   * Request background activation through the existing Session Agent controller.
-   * @param observation - owned lease disposed by the background task; callers retain their own lease separately.
-   */
-  private promote(observation: SessionObservation): void {
-    const sessionId = observation.header.id
-    const task = (async () => {
-      using ownedObservation = observation
-      const result = await this.agents.resolveObservedAgent(ownedObservation)
-      if ('error' in result) this.ctx.emit('api-session/error', sessionId, result.error.message)
-    })().catch((error: unknown) => {
-      this.ctx.logger.error(`session-controller: background activation for "${sessionId}" failed: ${errorChain(error)}`)
-    })
-    this.promotions.add(task)
-    void task.finally(() => { this.promotions.delete(task) })
   }
 
   /**

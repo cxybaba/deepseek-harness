@@ -82,7 +82,7 @@ it('loads from cordis.yml, counts the model\'s tool calls, and answers /tally th
     async execute(args) { return [{ type: 'text', text: `ran ${args.command}` }] },
   }))
   const agent = await context.agentLoop.create(SessionId('composed'), { provider: 'mock', model: 'mock' })
-  expect(context.commands.list(agent).map(command => command.name)).toEqual(['tally'])
+  expect(context.commands.list(agent.id).map(command => command.name)).toEqual(['tally'])
   agent.followup(createUserMessage({ content: [{ type: 'text', text: 'list the files here' }], source: { kind: 'user' } }))
   await agent.whenIdle()
   expect(adapter.requests).toHaveLength(2)

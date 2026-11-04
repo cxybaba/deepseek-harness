@@ -12,7 +12,7 @@ import type { FileBlock, ImageBlock } from '@deepseek-ai/dsh-llm'
 import { NamedEntries, ScopedLayers } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer } from '@deepseek-ai/dsh-scope'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionEventMap, SessionId } from '@deepseek-ai/dsh-session'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { CommandId } from './brand.ts'
 import type { CommandDefinitionId } from './brand.ts'
@@ -307,12 +307,17 @@ export class CommandRuntime extends TypertRemoteService {
   }
 
   /**
-   * List the effective immutable command descriptors for one agent.
-   * @param agent - exact receiving agent and scoped-layer key.
+   * List the effective immutable command descriptors for one Session.
+   * A passive catalog read: a cold Session lists global commands without
+   * resuming its Agent, and a live Session adds its scoped shadows. Registration
+   * under a resumed Agent emits `commands/change`, so the client repulls the
+   * full catalog once the Agent becomes live.
+   * @param agentId - Session identity whose live Agent, when present, owns scoped layers.
    * @returns name-sorted descriptors after scoped shadowing.
    */
   @Remote
-  list(agent: Agent): readonly CommandDescriptor[] {
+  list(agentId: SessionId): readonly CommandDescriptor[] {
+    const agent = this.ctx.get('agents')?.get(agentId)
     return Object.freeze([...this.view(agent).values()]
       .map(command => command.descriptor)
       // Names are unique in the effective view, so equality is impossible.
@@ -467,8 +472,8 @@ export class CommandRuntime extends TypertRemoteService {
   }
 
   /** Resolve global definitions followed by exact scoped shadows. */
-  private view(agent: Agent): Map<string, RegisteredCommand> {
-    return this.layers.merge(agent, layer => layer.commands)
+  private view(scope: ScopeKey | undefined): Map<string, RegisteredCommand> {
+    return this.layers.merge(scope, layer => layer.commands)
   }
 
   /** Notify every registry observer without making UI refresh load-bearing. */

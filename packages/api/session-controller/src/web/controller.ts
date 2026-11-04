@@ -2,7 +2,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import type { HistoryController } from '../history/controller.ts'
 import { addressId, rejectNotFound } from '../history.ts'
 import { EventListener, ListenerBuffer } from '../history/listener.ts'
@@ -15,17 +14,17 @@ export class WebController {
   /**
    * @param ctx - Host context carrying Session queries and identity projections.
    * @param historyController - passive reading and listener construction.
-   * @param promote - background activation requested before an opening snapshot is delivered.
    */
   constructor(
     private readonly ctx: Context,
     private readonly historyController: HistoryController,
-    private readonly promote: (observation: SessionObservation) => void,
   ) {}
 
   /**
    * Open a history snapshot and follow uncovered history and assistant notifications.
-   * @param request - Session identity, page budget, assistant output and optional activation (default false).
+   * The opening is always passive: reading a Session must never resume its Agent or
+   * take the write lease. Commands resolve the Agent on demand.
+   * @param request - Session identity, page budget and assistant output.
    * @param signal - cancellation for opening and streaming.
    * @returns an opening snapshot followed by uncovered queued increments.
    */
@@ -56,22 +55,11 @@ export class WebController {
       opening = { ...opening, assistantStream }
       assistantListener.setOrdinalCut(ordinal)
     }
-    // Increments come from the queue, so the opening ends this lease in every branch;
-    // activation continues on its own retained lease. Promotion starts before the opening is
-    // delivered, so a consumer that stops after the snapshot still gets the activation it asked for.
-    if (request.activate === true && !signal.aborted
-      && observation.header.origin !== 'subagent' && observation.source === 'prepared') {
-      const promotion = observation.retain()
-      observation[Symbol.dispose]()
-      try {
-        this.promote(promotion)
-      } catch (error: unknown) {
-        promotion[Symbol.dispose]()
-        throw error
-      }
-    } else {
-      observation[Symbol.dispose]()
-    }
+    // Increments come from the queue, so the opening ends this lease before the snapshot is
+    // delivered. A passive read never resumes an Agent: even an explicit `activate` request is
+    // ignored here, because taking the write lease from the Web viewer would block a concurrent
+    // headless resume. Prompt/selectModel/rename resolve the Agent when they need it.
+    observation[Symbol.dispose]()
     yield opening
     yield* queue.items()
   }

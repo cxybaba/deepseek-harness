@@ -15,10 +15,15 @@ function command(name: string, text = `ran:${name}`): CommandDefinition {
   }
 }
 
+const liveAgents = new WeakMap<Context, Map<SessionId, Agent>>()
+
 async function mount(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
+  const agents = new Map<SessionId, Agent>()
+  liveAgents.set(ctx, agents)
+  ctx.provide('agents', { get: (id: SessionId) => agents.get(id) } as never)
   return ctx
 }
 
@@ -26,6 +31,7 @@ async function mount(): Promise<Context> {
 async function mintAgentScope(ctx: Context, name: string): Promise<{ scope: Scope; agent: Agent }> {
   const session = ctx.sessions.create(SessionId(name))
   const agent = { id: session.id, session } as Agent
+  liveAgents.get(ctx)?.set(agent.id, agent)
   let scope!: Scope
   await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, agent) }, { inject: ['commands'] }))
   return { scope, agent }
@@ -66,7 +72,7 @@ describe('CommandRuntime', () => {
     }
     ctx.commands.register(definition)
 
-    const listed = ctx.commands.list(agent)
+    const listed = ctx.commands.list(agent.id)
     expect(listed).toEqual([{
       definitionId: CommandDefinitionId('example/inspect'),
       name: 'inspect',
@@ -86,7 +92,7 @@ describe('CommandRuntime', () => {
     ctx.commands.register(command('zeta'))
     ctx.commands.register(command('alpha'))
     ctx.commands.register(command('middle'))
-    expect(ctx.commands.list(agent).map(item => item.name)).toEqual(['alpha', 'middle', 'zeta'])
+    expect(ctx.commands.list(agent.id).map(item => item.name)).toEqual(['alpha', 'middle', 'zeta'])
   })
 
   it('uses agent-scoped shadows and removes them with their scope', async () => {
@@ -96,15 +102,15 @@ describe('CommandRuntime', () => {
     ctx.commands.register({ ...command('shared', 'global'), definitionId: CommandDefinitionId('example/shared') })
     scope.ctx.commands.register(command('shared', 'scoped'))
 
-    expect(ctx.commands.list(agent).map(item => item.name)).toEqual(['shared'])
+    expect(ctx.commands.list(agent.id).map(item => item.name)).toEqual(['shared'])
     expect(ctx.commands.find(agent, 'shared')?.handler).toBeDefined()
-    expect(ctx.commands.list(agent)[0]).not.toHaveProperty('definitionId')
-    expect(ctx.commands.list(other).map(item => item.name)).toEqual(['shared'])
+    expect(ctx.commands.list(agent.id)[0]).not.toHaveProperty('definitionId')
+    expect(ctx.commands.list(other.id).map(item => item.name)).toEqual(['shared'])
     expect((await ctx.commands.execute(agent, '/shared', [], new AbortController().signal))?.result)
       .toEqual({ kind: 'success', text: 'scoped' })
 
     await scope.dispose()
-    expect(ctx.commands.list(agent)[0]?.definitionId).toBe('example/shared')
+    expect(ctx.commands.list(agent.id)[0]?.definitionId).toBe('example/shared')
     expect((await ctx.commands.execute(agent, '/shared', [], new AbortController().signal))?.result.text).toBe('global')
   })
 
@@ -530,7 +536,7 @@ describe('command attachments', () => {
     const { agent } = await mintAgentScope(ctx, 'a')
     ctx.commands.register(accepting(() => ({ kind: 'success' })))
     ctx.commands.register({ ...command('plain-input'), input: { hint: 'x', attachments: false } })
-    const byName = new Map(ctx.commands.list(agent).map(descriptor => [descriptor.name, descriptor]))
+    const byName = new Map(ctx.commands.list(agent.id).map(descriptor => [descriptor.name, descriptor]))
     expect(byName.get('vision')?.input).toEqual({ hint: '<objective>', attachments: true })
     expect(byName.get('plain-input')?.input).toEqual({ hint: 'x' })
   })

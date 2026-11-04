@@ -178,7 +178,11 @@ export class SessionEventStream extends RemoteJournalStream<
     let assistantRevision: number | undefined
     for await (const frame of this.remote.session.follow({
       address: this.address,
-      activate: true,
+      // Opening a Session for viewing must not take its write lease: a
+      // headless writer may own the session, and passive history/projections
+      // read fine while that writer holds `session.lock`. A prompt resolves
+      // the Agent on demand through the Session Controller command path.
+      activate: false,
       assistantStream: true,
       ...this.repairRequest(request),
     }, signal)) {

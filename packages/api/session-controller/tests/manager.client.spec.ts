@@ -884,7 +884,7 @@ describe('subagent catalogs', () => {
           childSessionId: S2,
           mode: 'continuable',
         },
-        activate: true, assistantStream: true,
+        activate: false, assistantStream: true,
         maxMessages: 500,
         turnWindow: { minMessages: 50, minTurns: 2 },
       },

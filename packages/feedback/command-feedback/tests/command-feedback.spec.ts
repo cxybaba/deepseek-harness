@@ -97,7 +97,7 @@ describe('@deepseek-ai/dsh-command-feedback registration', () => {
     const loader = Object.create(Loader.prototype) as Loader
     expect(loader.unwrapExports(commandFeedback)).toBe(commandFeedback)
 
-    expect(test.ctx.commands.list(test.agent)).toContainEqual({
+    expect(test.ctx.commands.list(test.agent.id)).toContainEqual({
       definitionId: '@deepseek-ai/dsh-command-feedback',
       name: 'feedback',
       description: 'Record feedback about this session',
