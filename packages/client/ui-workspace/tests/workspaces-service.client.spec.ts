@@ -1082,15 +1082,25 @@ describe('UiWorkspaceService', () => {
     expect(b.sessions.create).not.toHaveBeenCalled()
   })
 
-  it('restores the Session named by the browser hash instead of the saved selection', () => {
-    stubHash('#/session/hash')
+  it('restores the Session named by an explicit hash route instead of the saved selection', () => {
+    stubHash('#/session/trajectory/hash')
     persistSelection({ sessionId: sid('saved') })
     const b = bench({
       sessions: sessionState([summary('hash'), summary('saved')]),
       workspaces: workspaceState(),
     })
     expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('hash'), { source: 'mainView' })
-    expect(window.location.hash).toBe('#/session/hash')
+    expect(window.location.hash).toBe('#/session/trajectory/hash')
+  })
+
+  it('keeps the saved Session for a view-only hash route', () => {
+    stubHash('#/session/trajectory')
+    persistSelection({ sessionId: sid('saved') })
+    const b = bench({
+      sessions: sessionState([summary('saved')]),
+      workspaces: workspaceState(),
+    })
+    expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('saved'), { source: 'mainView' })
   })
 
   it('writes the selected View into the browser hash for the current Session', () => {
@@ -1100,35 +1110,35 @@ describe('UiWorkspaceService', () => {
       sessions: sessionState([summary('hash')]),
       workspaces: workspaceState(),
     })
-    expect(window.location.hash).toBe('#/session/hash')
-    expect(b.uiWorkspace.readSessionRoute()).toEqual({ sessionId: sid('hash') })
+    expect(window.location.hash).toBe('')
     b.uiWorkspace.writeSessionView('trajectory')
-    expect(window.location.hash).toBe('#/session/hash/trajectory')
+    expect(window.location.hash).toBe('#/session/trajectory/hash')
+    expect(b.uiWorkspace.readSessionRoute()).toEqual({ view: 'trajectory', sessionId: sid('hash') })
     b.uiWorkspace.writeSessionView(undefined)
-    expect(window.location.hash).toBe('#/session/hash')
-    hash.hash = '#/session/other'
-    b.uiWorkspace.writeSessionView('trajectory')
-    expect(window.location.hash).toBe('#/session/other')
+    expect(window.location.hash).toBe('#/session/trajectory/hash')
+    hash.hash = '#/session/chat/other'
+    b.uiWorkspace.writeSessionView('chat')
+    expect(window.location.hash).toBe('#/session/chat/hash')
     hash.hash = ''
-    b.uiWorkspace.writeSessionView('trajectory')
-    expect(window.location.hash).toBe('#/session/hash/trajectory')
+    b.uiWorkspace.writeSessionView('chat')
+    expect(window.location.hash).toBe('#/session/chat/hash')
   })
 
-  it('opens the Session a hashchange names', () => {
-    const hash = stubHash('#/session/first')
+  it('opens the Session an explicit hashchange names', () => {
+    const hash = stubHash('#/session/trajectory/first')
     persistSelection({ sessionId: sid('first') })
     const b = bench({
       sessions: sessionState([summary('first'), summary('second')]),
       workspaces: workspaceState(),
     })
     expect(b.sessions.retain).toHaveBeenCalledWith(sid('first'), { source: 'mainView' })
-    hash.hash = '#/session/second'
+    hash.hash = '#/session/trajectory/second'
     for (const listener of hash.listeners) listener()
     expect(b.sessions.retain).toHaveBeenCalledWith(sid('second'), { source: 'mainView' })
   })
 
-  it('ignores hashchanges that name no listed Session', () => {
-    const hash = stubHash('#/session/first')
+  it('ignores hashchanges that name no listed Session or only a View', () => {
+    const hash = stubHash('#/session/trajectory/first')
     persistSelection({ sessionId: sid('first') })
     const b = bench({
       sessions: sessionState([summary('first')]),
@@ -1137,18 +1147,20 @@ describe('UiWorkspaceService', () => {
     const retained = b.sessions.retain.mock.calls.length
     hash.hash = '#/other'
     for (const listener of hash.listeners) listener()
-    hash.hash = '#/session/first'
+    hash.hash = '#/session/trajectory/first'
     for (const listener of hash.listeners) listener()
-    hash.hash = '#/session/unknown'
+    hash.hash = '#/session/trajectory/unknown'
+    for (const listener of hash.listeners) listener()
+    hash.hash = '#/session/trajectory'
     for (const listener of hash.listeners) listener()
     expect(b.sessions.retain).toHaveBeenCalledTimes(retained)
   })
 
   it('ignores a View write without a current Session', () => {
-    const hash = stubHash('#/session/hash')
+    const hash = stubHash('#/session/trajectory')
     const b = bench({ sessions: sessionState(), workspaces: workspaceState() })
     b.uiWorkspace.writeSessionView('trajectory')
-    expect(hash.hash).toBe('#/session/hash')
+    expect(hash.hash).toBe('#/session/trajectory')
   })
 
   it('reclaims the saved blank before opening history, even when another blank is listed first', async () => {

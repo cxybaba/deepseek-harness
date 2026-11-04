@@ -222,9 +222,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }
     return tabs
   }
-  const activateView = (sessionId: SessionId, preferred: string | null): void => {
+  const activateView = (sessionId: SessionId, preferred: string | null): string | undefined => {
     const active = resolveActiveView(viewTabs(), preferred)
     if (active !== undefined) uiConversation.binding(sessionId).activate(active.id)
+    return active?.id
   }
   const sessionViewActions = new Map<SessionId, BoundActions<typeof conversationStore>>()
   const applyRouteView = (sessionId: SessionId, view: string | undefined): void => {
@@ -232,13 +233,20 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     if (!viewTabs().some(tab => tab.id === view)) return
     activateView(sessionId, view)
     sessionViewActions.get(sessionId)?.setView(view)
+    if (ctx.uiSession.adapter.current.getSnapshot().key === sessionId) {
+      workspaceNavigation.writeSessionView?.(view)
+    }
+  }
+  const routeViewFor = (sessionId: SessionId): string | undefined => {
+    const route = workspaceNavigation.readSessionRoute?.()
+    if (route?.view === undefined) return undefined
+    return route.sessionId === undefined || route.sessionId === sessionId ? route.view : undefined
   }
   const restoreView = (sessionId: SessionId): void => {
-    const route = workspaceNavigation.readSessionRoute?.()
-    const preferred = route !== undefined && route.sessionId === sessionId && route.view !== undefined
-      ? route.view
-      : readConversationViewPreference(sessionId)
-    activateView(sessionId, preferred)
+    const active = activateView(sessionId, routeViewFor(sessionId) ?? readConversationViewPreference(sessionId))
+    if (active !== undefined && ctx.uiSession.adapter.current.getSnapshot().key === sessionId) {
+      workspaceNavigation.writeSessionView?.(active)
+    }
   }
   const conversationViews = createSnapshotStore<readonly ViewTab[]>(viewTabs())
   const viewPins = createViewPins()
@@ -247,13 +255,29 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     subscribe: (listener: () => void) => slots.subscribe('conversation.session.header.views.actions', listener),
   }
   ctx.effect(() => {
+    const current = ctx.uiSession.adapter.current
+    const syncHashView = (): void => {
+      const sessionId = current.getSnapshot().key as SessionId | undefined
+      if (sessionId === undefined) return
+      const active = resolveActiveView(
+        viewTabs(),
+        routeViewFor(sessionId) ?? readConversationViewPreference(sessionId),
+      )
+      if (active !== undefined) workspaceNavigation.writeSessionView?.(active.id)
+    }
+    const dispose = current.subscribe(syncHashView)
+    syncHashView()
+    return dispose
+  }, 'ui-conversation: Session hash view sync')
+  ctx.effect(() => {
     if (typeof window === 'undefined') return () => {}
     const applyHashView = (): void => {
       const route = workspaceNavigation.readSessionRoute?.()
-      if (route === undefined) return
+      if (route?.view === undefined) return
       const current = ctx.uiSession.adapter.current.getSnapshot().key as SessionId | undefined
-      if (current !== route.sessionId) return
-      applyRouteView(route.sessionId, route.view)
+      if (current === undefined) return
+      if (route.sessionId !== undefined && route.sessionId !== current) return
+      applyRouteView(current, route.view)
     }
     window.addEventListener('hashchange', applyHashView)
     return () => { window.removeEventListener('hashchange', applyHashView) }
@@ -479,7 +503,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionHeaderInjected => {
       sessionViewActions.set(sessionId, actions)
       const route = workspaceNavigation.readSessionRoute?.()
-      if (route !== undefined && route.sessionId === sessionId && route.view !== undefined
+      if (route !== undefined && route.view !== undefined
+        && (route.sessionId === undefined || route.sessionId === sessionId)
         && readConversationViewPreference(sessionId) !== route.view) {
         queueMicrotask(() => { applyRouteView(sessionId, route.view) })
       }

@@ -107,6 +107,20 @@ describe('target-neutral Conversation apply wiring', () => {
     await vi.waitFor(() => { expect(actions.setView).toHaveBeenCalledWith('trajectory') })
     await b.runtime.dispose()
   })
+  it('applies a view-only hash route to the current Session', async () => {
+    localStorage.removeItem(`dsh.conversation.${SID}`)
+    const b = await bench({ route: { view: 'trajectory' } })
+    await b.runtime.sessions.add({ id: SID })
+    b.runtime.sessions.retain(SID, { source: 'mainView' })
+    for (const id of ['chat', 'trajectory']) {
+      b.runtime.slots.register({ name: 'conversation.view', id, label: id }, (() => null) as never)
+    }
+    const header = b.runtime.slots.entries('conversation.session.header')[0]!
+    const actions = { setView: vi.fn(), openView: vi.fn() }
+    header.inject!(SID, actions as never)
+    await vi.waitFor(() => { expect(actions.setView).toHaveBeenCalledWith('trajectory') })
+    await b.runtime.dispose()
+  })
   it('waits for the layout-owned conversation declaration before registering its subtree', async () => {
     const b = await bench({ declareConversation: false })
     expect(b.runtime.slots.entries('main')).toHaveLength(0)

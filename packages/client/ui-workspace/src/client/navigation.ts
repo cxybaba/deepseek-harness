@@ -47,13 +47,13 @@ export interface UiWorkspace {
    */
   openSession(target: SessionTarget): void
   /**
-   * Read the Session route carried by the browser hash.
+   * Read the route carried by the browser hash.
    * @returns the parsed route, or undefined when the hash is not a Session route.
    */
   readSessionRoute(): SessionHashRoute | undefined
   /**
    * Write the current Session's Conversation View into the browser hash.
-   * @param view - selected View identity; the Session is written when absent.
+   * @param view - selected View identity; the current Session stays implicit.
    */
   writeSessionView(view: string | undefined): void
   /**
@@ -313,9 +313,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   writeSessionView(view: string | undefined): void {
     const sessionId = this.selection.getSnapshot().sessionId
-    if (sessionId === undefined) return
-    const route = readSessionHash()
-    if (route !== undefined && route.sessionId !== sessionId) return
+    if (sessionId === undefined || view === undefined) return
     replaceSessionHash(sessionHash(sessionId, view))
   }
 
@@ -479,7 +477,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
     const onHashChange = (): void => {
       const route = readSessionHash()
-      if (route === undefined) return
+      if (route?.sessionId === undefined) return
       if (this.selection.getSnapshot().sessionId === route.sessionId) return
       if (this.sessions.list.getSnapshot().byId[route.sessionId] === undefined) return
       this.openSession(route.sessionId)
@@ -498,7 +496,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   private async restoreSelection(workspaces: WorkspaceSnapshot, sessions: SessionListState): Promise<void> {
     const route = readSessionHash()
-    if (route !== undefined && sessions.byId[route.sessionId] !== undefined) {
+    if (route?.sessionId !== undefined && sessions.byId[route.sessionId] !== undefined) {
       this.replaceMain(route.sessionId, this.lifetime.signal, 'preserve')
       return
     }
@@ -581,11 +579,6 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         sessionId: reference.sessionId,
         ...(subagentAddress === undefined ? {} : { subagentAddress }),
       })
-      const route = readSessionHash()
-      replaceSessionHash(sessionHash(
-        reference.sessionId,
-        route?.sessionId === reference.sessionId ? route.view : undefined,
-      ))
     } catch (error: unknown) {
       reference.release()
       throw error

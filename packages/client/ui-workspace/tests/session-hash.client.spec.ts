@@ -2,29 +2,33 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  parseSessionHash, readSessionHash, replaceSessionHash, sessionHash,
+  parseSessionHash, readSessionHash, replaceSessionHash, sessionHash, viewHash,
 } from '../src/client/session-hash.ts'
 
 const SID = SessionId('om_x100b619b537')
 
 describe('Session hash route', () => {
-  it('round-trips a Session and View through the hash', () => {
-    expect(sessionHash(SID, 'trajectory')).toBe('#/session/om_x100b619b537/trajectory')
-    expect(parseSessionHash(sessionHash(SID, 'trajectory'))).toEqual({ sessionId: SID, view: 'trajectory' })
+  it('round-trips a View and Session through the hash', () => {
+    expect(sessionHash(SID, 'trajectory')).toBe('#/session/trajectory/om_x100b619b537')
+    expect(parseSessionHash(sessionHash(SID, 'trajectory'))).toEqual({ view: 'trajectory', sessionId: SID })
   })
 
-  it('omits an absent View and ignores unrelated hashes', () => {
-    expect(sessionHash(SID)).toBe('#/session/om_x100b619b537')
-    expect(parseSessionHash('#/session/om_x100b619b537')).toEqual({ sessionId: SID })
+  it('parses view-only and explicit routes', () => {
+    expect(viewHash('trajectory')).toBe('#/session/trajectory')
+    expect(parseSessionHash('#/session/trajectory')).toEqual({ view: 'trajectory' })
+    expect(sessionHash(SID, 'chat')).toBe('#/session/chat/om_x100b619b537')
+    expect(parseSessionHash('#/session/chat/om_x100b619b537')).toEqual({ view: 'chat', sessionId: SID })
     expect(parseSessionHash('#/other/om_x100b619b537')).toBeUndefined()
     expect(parseSessionHash('#/session/')).toBeUndefined()
+    expect(parseSessionHash('#/session/trajectory/')).toBeUndefined()
+    expect(parseSessionHash('#/session/chat/om_x100b619b537/extra')).toBeUndefined()
   })
 
-  it('decodes escaped Session and View identities', () => {
+  it('decodes escaped View and Session identities', () => {
     const escaped = SessionId('session/with space')
     const hash = sessionHash(escaped, 'view/one')
-    expect(hash).toBe('#/session/session%2Fwith%20space/view%2Fone')
-    expect(parseSessionHash(hash)).toEqual({ sessionId: escaped, view: 'view/one' })
+    expect(hash).toBe('#/session/view%2Fone/session%2Fwith%20space')
+    expect(parseSessionHash(hash)).toEqual({ view: 'view/one', sessionId: escaped })
   })
 
   it('rejects malformed escapes', () => {
@@ -36,10 +40,10 @@ describe('Session hash route', () => {
     window.history.replaceState(null, '', '/')
     expect(readSessionHash()).toBeUndefined()
     replaceSessionHash(sessionHash(SID, 'trajectory'))
-    expect(window.location.hash).toBe('#/session/om_x100b619b537/trajectory')
-    expect(readSessionHash()).toEqual({ sessionId: SID, view: 'trajectory' })
+    expect(window.location.hash).toBe('#/session/trajectory/om_x100b619b537')
+    expect(readSessionHash()).toEqual({ view: 'trajectory', sessionId: SID })
     replaceSessionHash(sessionHash(SID, 'trajectory'))
-    expect(window.location.hash).toBe('#/session/om_x100b619b537/trajectory')
+    expect(window.location.hash).toBe('#/session/trajectory/om_x100b619b537')
   })
 
   it('keeps the current hash when history refuses the write', () => {
@@ -47,7 +51,7 @@ describe('Session hash route', () => {
     const replaceState = vi.spyOn(window.history, 'replaceState').mockImplementation(() => {
       throw new Error('history denied')
     })
-    expect(() => { replaceSessionHash(sessionHash(SID)) }).not.toThrow()
+    expect(() => { replaceSessionHash(sessionHash(SID, 'chat')) }).not.toThrow()
     expect(window.location.hash).toBe('')
     replaceState.mockRestore()
   })
