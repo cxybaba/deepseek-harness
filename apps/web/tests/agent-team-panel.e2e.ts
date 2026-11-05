@@ -191,7 +191,7 @@ describe('web e2e: agent teamwork panel', () => {
     await page.keyboard.press('Escape')
     expect(await page.locator('[data-subagent-action]').count()).toBe(0)
     const agent = scaffold.ctx.agents.list()[0]!
-    expect(scaffold.ctx.commands.list(agent).some(command => command.name === 'team')).toBe(false)
+    expect(scaffold.ctx.commands.list(agent.id).some(command => command.name === 'team')).toBe(false)
     expect(agent.session.ownEvents().filter(event => event.type === 'command/run' || event.type === 'command/done')).toEqual([])
     const other = await scaffold.ctx.agents.create({ sessionId: SessionId('other-team-mode'), agentOptions: agent.options })
     expect(scaffold.ctx.agentTeams.isEnabled(other.agent)).toBe(false)
@@ -896,7 +896,7 @@ it.each(RECEIPT_LOCALES)('toggles teamwork in $language without command records 
       await toggle.click()
       await expect.poll(() => toggle.getAttribute('aria-checked')).toBe(String(enabled))
       await expect.poll(() => scaffold.ctx.agentTeams.isEnabled(agent)).toBe(enabled)
-      expect(scaffold.ctx.commands.list(agent).some(command => command.name === 'team')).toBe(false)
+      expect(scaffold.ctx.commands.list(agent.id).some(command => command.name === 'team')).toBe(false)
       expect(commandEvents()).toEqual([])
       await page.keyboard.press('Escape')
       await assertChatUnchanged()

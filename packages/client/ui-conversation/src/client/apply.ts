@@ -14,7 +14,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ShortcutCommandId, ShortcutFixedCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
-import type { SessionHashRoute } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { UiConversation } from './conversation/assembly.ts'
 import { UserText, PlainUserText, SessionReference } from './user-text/UserText.tsx'
 import { sessionReferenceRule } from './user-text/session-reference-rule.ts'
@@ -120,7 +119,7 @@ interface WorkspaceNavigation {
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
     beforeOpen: (sessionId: SessionId) => void,
   ): Promise<void>
-  readSessionRoute?(): SessionHashRoute | undefined
+  readSessionRoute?(): { readonly sessionId?: SessionId; readonly view?: string } | undefined
   writeSessionView?(view: string | undefined): void
 }
 

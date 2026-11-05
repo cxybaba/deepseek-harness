@@ -103,7 +103,7 @@ describe('target-neutral Conversation apply wiring', () => {
     }
     const header = b.runtime.slots.entries('conversation.session.header')[0]!
     const actions = { setView: vi.fn(), openView: vi.fn() }
-    header.inject!(SID, actions as never)
+    header.inject!(SID as never, actions as never)
     await vi.waitFor(() => { expect(actions.setView).toHaveBeenCalledWith('trajectory') })
     await b.runtime.dispose()
   })
@@ -117,7 +117,7 @@ describe('target-neutral Conversation apply wiring', () => {
     }
     const header = b.runtime.slots.entries('conversation.session.header')[0]!
     const actions = { setView: vi.fn(), openView: vi.fn() }
-    header.inject!(SID, actions as never)
+    header.inject!(SID as never, actions as never)
     await vi.waitFor(() => { expect(actions.setView).toHaveBeenCalledWith('trajectory') })
     await b.runtime.dispose()
   })
